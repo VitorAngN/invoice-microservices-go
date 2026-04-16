@@ -1,19 +1,25 @@
-# Sistema de Emissão de Notas Fiscais (Microsserviços) 🚀
+# Sistema de Emissão de Notas Fiscais (Microsserviços)
 
-Este projeto foi desenvolvido focado em alta disponibilidade, resiliência e Design UI premium. A aplicação adota a arquitetura de **Microsserviços em Golang** interconectados com um front-end moderno em **Angular**. 
+<p align="left">
+  <img src="https://img.shields.io/badge/Angular-17-DD0031?style=flat-square&logo=angular" />
+  <img src="https://img.shields.io/badge/Go-1.22-00ADD8?style=flat-square&logo=go" />
+  <img src="https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql" />
+  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker" />
+</p>
 
-> Solução para o Teste Técnico Korp focado na gestão isolada de Estoque e Faturamento.
+Este projeto foi desenvolvido focado em alta disponibilidade, resiliência e Design UI premium. A aplicação adota a arquitetura de **Microsserviços em Golang** interconectados com um front-end moderno em **Angular**.
+
+Para detalhes aprofundados sobre as decisões técnicas, uso de RxJS, Ciclos de Vida do Angular e Resiliência do Backend, acesse o guia:  
+**[DETALHES_TECNICOS.md](./DETALHES_TECNICOS.md)**
+
+### Vídeo de Demonstração
+Acesse a apresentação em vídeo do sistema e resumo das funcionalidades:  
+**[Assistir no YouTube](https://youtu.be/vij8uouVOGg)**
+
+---
 
 
-## 🔮 Stack Tecnológico
-
-- **Frontend:** Angular 17 (Standalone Components) com UI própria "Glassmorphism" 
-- **Backend (Microsserviços):** Golang (Go 1.22+)
-- **Banco de Dados:** PostgreSQL 15
-- **Deploy Local:** Docker & Docker Compose
-
-
-## 🚀 Como Rodar o Projeto
+## Como Rodar o Projeto
 
 Você precisa do **Docker** e do **Go** instalados na sua máquina.
 
@@ -43,7 +49,7 @@ Você precisa do **Docker** e do **Go** instalados na sua máquina.
 
 ---
 
-## 📄 Detalhamento Técnico (Perguntas Solicitadas)
+## Detalhamento Técnico (Perguntas Solicitadas)
 
 ### 1. Ciclos de vida do Angular utilizados
 Foi feito uso de dois ciclos de vida primários nos componentes standalone (`ProductsComponent` e `InvoicesComponent`):
