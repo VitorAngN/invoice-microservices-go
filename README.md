@@ -1,83 +1,87 @@
-# Sistema de Emissão de Notas Fiscais (Microsserviços)
+# Sistema de Faturamento em Microsserviços
 
-<p align="left">
-  <img src="https://img.shields.io/badge/Angular-17-DD0031?style=flat-square&logo=angular" />
-  <img src="https://img.shields.io/badge/Go-1.22-00ADD8?style=flat-square&logo=go" />
-  <img src="https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql" />
-  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker" />
+<p>
+  <img src="https://img.shields.io/badge/Status-Concluído-success?style=flat-square" alt="Status" />
+  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go" />
+  <img src="https://img.shields.io/badge/Angular-17-DD0031?style=flat-square&logo=angular&logoColor=white" alt="Angular" />
+  <img src="https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/Docker_Compose-Orquestração-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
 </p>
 
-Este projeto foi desenvolvido focado em alta disponibilidade, resiliência e Design UI premium. A aplicação adota a arquitetura de **Microsserviços em Golang** interconectados com um front-end moderno em **Angular**.
+Arquitetura de **microsserviços em Go** para gestão integrada de estoque e emissão de notas fiscais. O projeto foi construído com foco em resiliência e consistência de dados em operações concorrentes.
 
-Para detalhes aprofundados sobre as decisões técnicas, uso de RxJS, Ciclos de Vida do Angular e Resiliência do Backend, acesse o guia:  
-**[DETALHES_TECNICOS.md](./DETALHES_TECNICOS.md)**
-
-### Vídeo de Demonstração
-Acesse a apresentação em vídeo do sistema e resumo das funcionalidades:  
-**[Assistir no YouTube](https://youtu.be/vij8uouVOGg)**
+> Demonstração em vídeo: [youtube.com/watch?v=vij8uouVOGg](https://youtu.be/vij8uouVOGg)
 
 ---
 
+## Diferenciais Técnicos
 
-## Como Rodar o Projeto
+### Resiliência e Fallback
+Ao emitir uma nota, o serviço de faturamento realiza uma chamada HTTP ao serviço de estoque. Caso o serviço esteja indisponível, o sistema executa **retry automático** com espera entre tentativas. Se todas as retentativas falharem, a API retorna `HTTP 503 Service Unavailable` e o frontend Angular exibe um toast de erro ao usuário.
 
-Você precisa do **Docker** e do **Go** instalados na sua máquina.
+### Consistência em Operações Concorrentes
+A baixa de estoque usa verificação atômica diretamente no banco:
+```sql
+UPDATE products SET balance = balance - 1 WHERE id = $1 AND balance >= 1
+```
+Isso previne saldo negativo em compras simultâneas do mesmo item, sem depender de locks em nível de aplicação.
 
-1. **Subir o Banco de Dados:**
-   Na raiz do projeto (onde está o `docker-compose.yml`), rode:
-   ```bash
-   docker-compose up -d
-   ```
-2. **Rodar Serviço de Estoque (Porta 8081):**
-   ```bash
-   cd stock-service
-   go run main.go
-   ```
-3. **Rodar Serviço de Faturamento (Porta 8082):**
-   ```bash
-   cd invoice-service
-   go run main.go
-   ```
-4. **Rodar Frontend Angular (Porta 4200):**
-   ```bash
-   cd frontend
-   npm install
-   ng serve
-   ```
-   *Acesse `http://localhost:4200`.*
+### Transações ACID e Rollback
+Toda operação de faturamento é envolvida em uma transação de banco de dados. Em qualquer ponto de falha (rede, validação, estoque insuficiente), o `defer tx.Rollback()` garante que nenhum dado parcial seja persistido.
 
+### Gerenciamento de Estado Reativo (Angular)
+O frontend usa `BehaviorSubject` e `Observable` do **RxJS** como fonte única de verdade para os dados da UI. O operador `takeUntil(destroy$)` é usado nos componentes para cancelar as inscrições ao destruir a view, prevenindo memory leaks.
 
 ---
 
-## Detalhamento Técnico (Perguntas Solicitadas)
+## Stack
 
-### 1. Ciclos de vida do Angular utilizados
-Foi feito uso de dois ciclos de vida primários nos componentes standalone (`ProductsComponent` e `InvoicesComponent`):
-- `ngOnInit()`: Invocado em todas as invocações de tela para carregar as inscrições nos observables de Faturamento/Produtos e requerer os dados iniciais (`loadProducts()`).
-- `ngOnDestroy()`: Usado criticamente em conjunto com uma técnica de desinscrição (`Subject/takeUntil`) para prevenir **Memory Leaks** por observables que ficam "vivos" após o fechamento da tela.
+| Camada | Tecnologia |
+|---|---|
+| Frontend | Angular 17, RxJS, CSS Glassmorphism |
+| Microsserviços | Go 1.22+, Gin Framework, GORM |
+| Banco de Dados | PostgreSQL 15 |
+| Orquestração | Docker & Docker Compose |
 
-### 2. Uso da biblioteca RxJS
-O **RxJS** foi massivamente utilizado como a espinha dorsal de gerência de estado e eventos assíncronos:
-- Uso do `BehaviorSubject` e `Observable` no `ApiService` para agirem como a única "Fonte de Verdade" dos dados da UI (State Management centralizado).
-- Funções operator (`pipe`, `tap` e `catchError`) para manipular as respostas HTTP (disparar retentativas ou emular lógicas antes que o subscriber da View receba a info).
-- `takeUntil(this.destroy$)` para gerenciar a destruição automatizada das subinscrições.
+---
 
-### 3. Bibliotecas Adicionais no Frontend e Visual
-- Utilizamos o core nativo de Angular como `CommonModule`, e `ReactiveFormsModule` para validações ativas em tempo real no HTML e criação de sub-formulários (uma nota com N produtos - `FormArray`).
-- Para os **componentes visuais**: A abordagem escolhida não importou pesados frameworks visuais, em vez disso, codificou-se um design ultra-veloz e nativo focando na tendência de _Glassmorphism_ em variáveis CSS Puras com Google Fonts (Outfit).
+## Como Executar
 
-### 4. Gerenciamento de Dependências no Golang
-Todo o microsserviço Golang é isolado com os padrões do `Go Modules`. Foram inicializados ecossistemas independentes (`go mod init`) alocados na pasta raiz em cada projeto contendo as descrições em `go.mod` e as resoluções de hashes em `go.sum`, determinizando os sub-packages.
+Você precisa do **Docker** e do **Go** instalados.
 
-### 5. Utilização de Frameworks no Golang
-Ambos serviços usam um esqueleto semelhante para as APIs que importam **Gin Web Framework** para roteamento extremante veloz, e o **GORM** (Go Object Relational Mapper) para traduzir *Structs* nativas do Go nas migrações lógicas do PostgreSQL usando o driver oficial da pg. O tratamento de origens foi com a biblioteca local `cors`.
+```bash
+# 1. Subir o banco de dados PostgreSQL
+docker-compose up -d
 
-### 6. Tratamento de Erros e Exceções (Backend)
-Para o cenário de falha, usamos o `Begin()` limitador do ORM (Transações ACID).
-- Ex: Ao iniciar a impressão de NF e disparar a chamada à API no serviço de Estoque, a rede pode cair ou ocorrer indisponibilidade. Faturamento vai tratar usando Retry local de retentativa em x segundos.
-- Se todas as retentativas falharem (Feedback), a API devolve um Http `503 Service Unavailable`, o Angular apanha no RxJS e devolve um toast amigável: "O serviço de estoque está indisponível. A impressão falhou.".
-- Ao dar erro (em qualquer parte), usamos o `defer tx.Rollback()`, para assegurar a atomicidade, e as exceptions de negócio geram retornos em JSON (`http.StatusConflict` -> `"error": "Saldo insuficiente"`).
+# 2. Rodar o serviço de estoque (porta 8081)
+cd stock-service && go run main.go
 
-### 7. Trabalhos Extras Realizados (Concorrência e Idempotência)
-- **Concorrência (Lock):** O UPDATE do estoque usa verificação atômica `UPDATE balance = balance - 1 WHERE balance >= 1`, prevenindo compras simultâneas do último item e inviabilizando saldo negativo.
-- **Idempotência:** A impressão valida estritamente a variável de Status. Duplos-cliques na emissão nunca enviarão batidas duplicadas ao Estoque devido ao controle de status inicial de "Aberta".
+# 3. Rodar o serviço de faturamento (porta 8082)
+cd invoice-service && go run main.go
+
+# 4. Rodar o frontend Angular (porta 4200)
+cd frontend && npm install && ng serve
+```
+
+Acesse em `http://localhost:4200`.
+
+---
+
+## Arquitetura
+
+```
+invoice-microservices-go/
+├── stock-service/       # Microsserviço de gestão de estoque (Go + GORM)
+│   ├── main.go
+│   ├── go.mod
+│   └── go.sum
+├── invoice-service/     # Microsserviço de emissão de NF com retry/fallback (Go)
+│   ├── main.go
+│   ├── go.mod
+│   └── go.sum
+├── frontend/            # Interface Angular com estado reativo (RxJS)
+│   └── src/
+└── docker-compose.yml   # PostgreSQL isolado para execução reproduzível
+```
+
+<img src="https://komarev.com/ghpvc/?username=VitorAngN-invoice-microservices-go" width="1" height="1" alt="" />
