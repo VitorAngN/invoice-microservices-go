@@ -1,0 +1,2 @@
+# Força o Linguist a ignorar o frontend para cálculo de linguagem
+frontend/** linguist-vendored

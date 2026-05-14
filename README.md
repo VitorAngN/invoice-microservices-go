@@ -1,13 +1,14 @@
-# Sistema de Emissão de Notas Fiscais (Microsserviços)
+<h1 align="center">Invoice Microservices — Sistema de Faturamento</h1>
 
-<p align="left">
-  <img src="https://img.shields.io/badge/Angular-17-DD0031?style=flat-square&logo=angular" />
+<p align="center">
+  <img src="https://img.shields.io/badge/Status-Concluído-success?style=flat-square" />
   <img src="https://img.shields.io/badge/Go-1.22-00ADD8?style=flat-square&logo=go" />
+  <img src="https://img.shields.io/badge/Angular-17-DD0031?style=flat-square&logo=angular" />
   <img src="https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql" />
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker" />
 </p>
 
-Este projeto foi desenvolvido focado em alta disponibilidade, resiliência e Design UI premium. A aplicação adota a arquitetura de **Microsserviços em Golang** interconectados com um front-end moderno em **Angular**.
+Sistema de faturamento e controle de estoque construído sobre arquitetura de **microsserviços em Go**, com frontend reativo em **Angular**. O foco técnico está na resiliência de operações distribuídas: retry automático, fallback HTTP 503, transações ACID e lock atômico para concorrência segura.
 
 Para detalhes aprofundados sobre as decisões técnicas, uso de RxJS, Ciclos de Vida do Angular e Resiliência do Backend, acesse o guia:  
 **[DETALHES_TECNICOS.md](./DETALHES_TECNICOS.md)**
@@ -49,7 +50,7 @@ Você precisa do **Docker** e do **Go** instalados na sua máquina.
 
 ---
 
-## Detalhamento Técnico (Perguntas Solicitadas)
+## Decisões Técnicas
 
 ### 1. Ciclos de vida do Angular utilizados
 Foi feito uso de dois ciclos de vida primários nos componentes standalone (`ProductsComponent` e `InvoicesComponent`):
