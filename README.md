@@ -8,7 +8,11 @@
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker" />
 </p>
 
-Sistema de faturamento e controle de estoque construído sobre arquitetura de **microsserviços em Go**, com frontend reativo em **Angular**. O foco técnico está na resiliência de operações distribuídas: retry automático, fallback HTTP 503, transações ACID e lock atômico para concorrência segura.
+Sistema de faturamento e controle de estoque desenvolvido com microsserviços em Go, PostgreSQL e frontend em Angular.
+
+O projeto simula um fluxo de emissão de nota/faturamento integrado ao controle de estoque, com foco em comunicação HTTP entre serviços, persistência relacional, tratamento de falhas, transações ACID, rollback, retry automático, fallback HTTP 503 e atualização atômica de estoque para reduzir inconsistências em operações concorrentes.
+
+O ambiente local utiliza Docker Compose para o banco PostgreSQL, enquanto os serviços Go e o frontend Angular podem ser executados separadamente para facilitar testes e desenvolvimento.
 
 Para detalhes aprofundados sobre as decisões técnicas, uso de RxJS, Ciclos de Vida do Angular e Resiliência do Backend, acesse o guia:  
 **[DETALHES_TECNICOS.md](./DETALHES_TECNICOS.md)**
@@ -81,5 +85,10 @@ Para o cenário de falha, usamos o `Begin()` limitador do ORM (Transações ACID
 - Ao dar erro (em qualquer parte), usamos o `defer tx.Rollback()`, para assegurar a atomicidade, e as exceptions de negócio geram retornos em JSON (`http.StatusConflict` -> `"error": "Saldo insuficiente"`).
 
 ### 7. Trabalhos Extras Realizados (Concorrência e Idempotência)
-- **Concorrência (Lock):** O UPDATE do estoque usa verificação atômica `UPDATE balance = balance - 1 WHERE balance >= 1`, prevenindo compras simultâneas do último item e inviabilizando saldo negativo.
-- **Idempotência:** A impressão valida estritamente a variável de Status. Duplos-cliques na emissão nunca enviarão batidas duplicadas ao Estoque devido ao controle de status inicial de "Aberta".
+Para reduzir inconsistências em operações concorrentes, a atualização de estoque utiliza uma operação atômica no banco de dados:
+
+UPDATE balance = balance - 1 WHERE balance >= 1
+
+Essa abordagem evita que múltiplas requisições consumam o mesmo item quando o saldo disponível é insuficiente.
+
+Também foi implementado um controle básico de status da nota para reduzir o risco de reemissão acidental durante o fluxo de faturamento.
