@@ -1,25 +1,42 @@
-version: '3.8'
-
 services:
   db:
-    image: postgres:15
-    container_name: korp_postgres
+    image: postgres:16-alpine
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: korp
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-korp}
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-    networks:
-      - korp_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-korp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  # Depois adicionamos os microsserviços via Dockerfile se necessrio para o ambiente final.
-  
+  stock-service:
+    build: ./stock-service
+    environment:
+      DATABASE_URL: host=db user=${POSTGRES_USER:-user} password=${POSTGRES_PASSWORD:-password} dbname=${POSTGRES_DB:-korp} port=5432 sslmode=disable TimeZone=America/Sao_Paulo
+    ports:
+      - "8081:8081"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  invoice-service:
+    build: ./invoice-service
+    environment:
+      DATABASE_URL: host=db user=${POSTGRES_USER:-user} password=${POSTGRES_PASSWORD:-password} dbname=${POSTGRES_DB:-korp} port=5432 sslmode=disable TimeZone=America/Sao_Paulo
+      STOCK_SERVICE_URL: http://stock-service:8081
+    ports:
+      - "8082:8082"
+    depends_on:
+      db:
+        condition: service_healthy
+      stock-service:
+        condition: service_started
+
 volumes:
   pgdata:
-
-networks:
-  korp_network:
-    driver: bridge

@@ -24,3 +24,7 @@ Thumbs.db
 
 # Environment variables
 .env
+
+# Bancos SQLite locais
+*.db
+*.db-journal
