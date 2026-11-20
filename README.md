@@ -1,8 +1,8 @@
 <h1 align="center">Invoice Microservices — Sistema de Faturamento</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Status-Concluído-success?style=flat-square" />
-  <img src="https://img.shields.io/badge/Go-1.22-00ADD8?style=flat-square&logo=go" />
+  <a href="https://github.com/VitorAngN/invoice-microservices-go/actions/workflows/ci.yml"><img src="https://github.com/VitorAngN/invoice-microservices-go/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=flat-square&logo=go" />
   <img src="https://img.shields.io/badge/Angular-17-DD0031?style=flat-square&logo=angular" />
   <img src="https://img.shields.io/badge/PostgreSQL-15-4169E1?style=flat-square&logo=postgresql" />
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker" />
@@ -26,32 +26,33 @@ Acesse a apresentação em vídeo do sistema e resumo das funcionalidades:
 
 ## Como Rodar o Projeto
 
-Você precisa do **Docker** e do **Go** instalados na sua máquina.
+### Opção 1: tudo com Docker (banco + 2 microsserviços)
+```bash
+docker compose up -d --build
+```
+- Estoque: http://localhost:8081 · Faturamento: http://localhost:8082 · `GET /health` em cada um.
 
-1. **Subir o Banco de Dados PostgreSQL:**
-   Na raiz do projeto (onde está o `docker-compose.yml`), rode:
-   ```bash
-   docker-compose up -d
-   ```
-   Os serviços usam a variável `DATABASE_URL`. Se ela não estiver configurada ou o PostgreSQL estiver indisponível, o projeto cai para SQLite local como fallback de desenvolvimento.
-2. **Rodar Serviço de Estoque (Porta 8081):**
-   ```bash
-   cd stock-service
-   go run main.go
-   ```
-3. **Rodar Serviço de Faturamento (Porta 8082):**
-   ```bash
-   cd invoice-service
-   go run main.go
-   ```
-4. **Rodar Frontend Angular (Porta 4200):**
-   ```bash
-   cd frontend
-   npm install
-   ng serve
-   ```
-   *Acesse `http://localhost:4200`.*
+Depois, rode o frontend:
+```bash
+cd frontend
+npm install
+npx ng serve      # http://localhost:4200
+```
 
+### Opção 2: serviços Go localmente
+```bash
+docker compose up -d db                      # só o PostgreSQL
+cd stock-service   && go run .              # porta 8081
+cd invoice-service && go run .              # porta 8082
+```
+Para testar sem PostgreSQL, use SQLite explicitamente: `DB_DRIVER=sqlite go run .`
+
+### Testes
+```bash
+cd stock-service   && go test -race ./...
+cd invoice-service && go test -race ./...
+```
+Os testes usam SQLite em memória e `httptest`, sem precisar de banco ou rede, e rodam no GitHub Actions a cada push.
 
 ---
 
@@ -78,17 +79,25 @@ Todo o microsserviço Golang é isolado com os padrões do `Go Modules`. Foram i
 ### 5. Utilização de Frameworks no Golang
 Ambos serviços usam um esqueleto semelhante para as APIs que importam **Gin Web Framework** para roteamento extremante veloz, e o **GORM** (Go Object Relational Mapper) para traduzir *Structs* nativas do Go nas migrações lógicas do PostgreSQL usando o driver oficial da pg. O tratamento de origens foi com a biblioteca local `cors`.
 
-### 6. Tratamento de Erros e Exceções (Backend)
-Para o cenário de falha, usamos o `Begin()` limitador do ORM (Transações ACID).
-- Ex: Ao iniciar a impressão de NF e disparar a chamada à API no serviço de Estoque, a rede pode cair ou ocorrer indisponibilidade. Faturamento vai tratar usando Retry local de retentativa em x segundos.
-- Se todas as retentativas falharem (Feedback), a API devolve um Http `503 Service Unavailable`, o Angular apanha no RxJS e devolve um toast amigável: "O serviço de estoque está indisponível. A impressão falhou.".
-- Ao dar erro (em qualquer parte), usamos o `defer tx.Rollback()`, para assegurar a atomicidade, e as exceptions de negócio geram retornos em JSON (`http.StatusConflict` -> `"error": "Saldo insuficiente"`).
+### 6. Tratamento de Erros e Resiliência (Backend)
+- **Retry com backoff exponencial:** o faturamento chama o estoque com timeout por requisição e até 3 tentativas (0,5 s → 1 s). Falhas de rede e respostas 5xx são repetidas; erros de regra de negócio (404 produto inexistente, 409 saldo insuficiente, 400) voltam na hora, porque repetir não mudaria o resultado.
+- **Fallback HTTP 503:** se todas as tentativas falharem, a API responde `503 Service Unavailable` e o Angular mostra um aviso amigável. O header `X-Simulate-Failure: true` permite demonstrar esse cenário pela interface.
+- **Erros tipados:** cada falha do estoque vira um erro Go (`ErrInsufficientStock`, `ErrProductNotFound`, `ErrUnavailable`) mapeado para o status HTTP correto.
 
-### 7. Trabalhos Extras Realizados (Concorrência e Idempotência)
-Para reduzir inconsistências em operações concorrentes, a atualização de estoque utiliza uma operação atômica no banco de dados:
+### 7. Concorrência, Atomicidade e Idempotência
+- **Baixa atômica e "tudo ou nada":** todos os itens de uma nota são debitados numa única transação com `UPDATE ... SET balance = balance - q WHERE balance >= q`. Se um item não tiver saldo, nenhum é debitado, e o saldo nunca fica negativo, mesmo com requisições simultâneas (há teste com 25 baixas concorrentes sobre saldo 10).
+- **Impressão única:** a impressão troca o status `Aberta → Processando` com um UPDATE condicional. Se dois cliques chegarem ao mesmo tempo, só um consegue a troca e o outro recebe `409`. Se o estoque falhar, a nota volta para `Aberta`.
+- **Idempotência:** cada baixa envia `Idempotency-Key: invoice-<id>`. O estoque grava a chave na mesma transação da baixa; se o faturamento repetir a chamada (por exemplo, a resposta se perdeu na rede), o estoque responde sucesso sem debitar de novo.
+- **Numeração da nota:** `MAX(number) + 1` protegido por índice único; em caso de conflito entre duas criações simultâneas, a criação é refeita com o próximo número.
+- **Validação:** quantidades precisam ser maiores que zero (antes, uma quantidade negativa aumentava o estoque).
 
-UPDATE balance = balance - 1 WHERE balance >= 1
-
-Essa abordagem evita que múltiplas requisições consumam o mesmo item quando o saldo disponível é insuficiente.
-
-Também foi implementado um controle básico de status da nota para reduzir o risco de reemissão acidental durante o fluxo de faturamento.
+### 8. Estrutura dos Serviços
+```
+stock-service/ e invoice-service/
+├── main.go                 # configuração, rotas e encerramento gracioso
+└── internal/
+    ├── database/           # conexão (PostgreSQL ou SQLite explícito)
+    ├── product|invoice/    # modelos, regras e handlers HTTP + testes
+    └── stock/              # (faturamento) cliente HTTP do estoque com retry + testes
+```
+Dependências são injetadas nos handlers (sem variável global de banco), o que permite testar cada regra isoladamente.
