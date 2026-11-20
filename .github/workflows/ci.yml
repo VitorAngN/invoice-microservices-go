@@ -28,6 +28,46 @@ jobs:
       - run: go test -race -count=1 ./...
       - run: go build ./...
 
+  e2e:
+    name: ponta a ponta com PostgreSQL real
+    runs-on: ubuntu-latest
+    needs: go
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: korp
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U user -d korp"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: host=localhost user=user password=password dbname=korp port=5432 sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: stock-service/go.mod
+          cache-dependency-path: '*/go.sum'
+      - name: Compilar os serviços
+        run: |
+          (cd stock-service && go build -o ../bin/stock .)
+          (cd invoice-service && go build -o ../bin/invoice .)
+      - name: Subir estoque e faturamento
+        run: |
+          PORT=8081 ./bin/stock > stock.log 2>&1 &
+          PORT=8082 STOCK_SERVICE_URL=http://localhost:8081 ./bin/invoice > invoice.log 2>&1 &
+          for url in http://localhost:8081/health http://localhost:8082/health; do
+            timeout 30 bash -c "until curl -sf $url; do sleep 1; done"
+          done
+      - name: Teste de fumaça
+        run: bash scripts/smoke-test.sh
+      - name: Logs dos serviços (se falhar)
+        if: failure()
+        run: cat stock.log invoice.log
+
   frontend:
     name: frontend (build Angular)
     runs-on: ubuntu-latest
