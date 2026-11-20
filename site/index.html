@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Faturamento em Microsserviços — João Vitor Angelim Nogueira</title>
+<meta name="description" content="Microsserviços em Go para estoque e faturamento com PostgreSQL: concorrência, idempotência, retry com backoff e testes ponta a ponta.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#ffffff; --soft:#f6f8fb; --card:#ffffff; --line:#e5e9f0; --txt:#1f2937; --muted:#6b7280; --acc:#1e3a5f; --acc2:#2563eb; --ok:#16a34a; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--txt); line-height:1.6; }
+  a { color:var(--acc2); text-decoration:none; } a:hover { text-decoration:underline; }
+  .wrap { max-width:1080px; margin:0 auto; padding:0 24px; }
+  nav { border-bottom:1px solid var(--line); background:#fff; position:sticky; top:0; z-index:10; }
+  nav .wrap { display:flex; align-items:center; justify-content:space-between; height:64px; }
+  nav .logo { font-weight:700; color:var(--acc); }
+  nav .links a { color:var(--muted); margin-left:24px; font-weight:500; font-size:15px; }
+  header { padding:72px 0 56px; background:var(--soft); }
+  .eyebrow { display:inline-block; background:#e8eef7; color:var(--acc); font-size:13px; font-weight:600; padding:6px 12px; border-radius:999px; }
+  h1 { font-size:clamp(32px,5vw,46px); margin:16px 0 12px; line-height:1.15; color:#111827; }
+  .lead { font-size:18px; color:var(--muted); max-width:720px; }
+  .btns { display:flex; gap:12px; flex-wrap:wrap; margin-top:28px; }
+  .btn { padding:12px 20px; border-radius:12px; border:1px solid var(--line); background:#fff; color:var(--txt); font-weight:600; box-shadow:0 1px 2px rgba(16,24,40,.06); }
+  .btn.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+  .btn:hover { text-decoration:none; filter:brightness(1.05); }
+  section { padding:64px 0; }
+  section.alt { background:var(--soft); }
+  h2 { font-size:28px; margin:0 0 24px; color:#111827; }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:20px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:24px; box-shadow:0 4px 16px rgba(16,24,40,.06); }
+  .stat b { display:block; font-size:34px; color:var(--acc); }
+  .stat span { color:var(--muted); font-size:15px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:20px; padding:24px; box-shadow:0 4px 16px rgba(16,24,40,.06); }
+  .card h3 { margin:0 0 8px; font-size:18px; color:#111827; }
+  .card p { margin:0; color:var(--muted); font-size:15px; }
+  code { background:#f1f4f9; padding:2px 6px; border-radius:6px; font-size:14px; }
+  .tags { display:flex; flex-wrap:wrap; gap:10px; }
+  .tag { background:#fff; border:1px solid var(--line); border-radius:999px; padding:8px 14px; font-size:14px; font-weight:500; }
+  .shots { display:grid; grid-template-columns:repeat(auto-fit,minmax(420px,1fr)); gap:20px; }
+  figure { margin:0; background:#fff; border:1px solid var(--line); border-radius:20px; overflow:hidden; box-shadow:0 4px 16px rgba(16,24,40,.06); }
+  figure img { width:100%; display:block; aspect-ratio:16/10; object-fit:cover; object-position:top; }
+  figcaption { padding:12px 16px; color:var(--muted); font-size:14px; font-weight:500; }
+  pre { background:#0f172a; color:#e2e8f0; border-radius:16px; padding:20px; overflow:auto; font-size:14px; }
+  footer { padding:32px 0 48px; color:var(--muted); font-size:14px; border-top:1px solid var(--line); }
+</style>
+</head>
+<body>
+<nav>
+  <div class="wrap">
+    <span class="logo">Faturamento em Microsserviços</span>
+    <span class="links"><a href="api/">API</a><a href="https://github.com/VitorAngN/invoice-microservices-go">GitHub</a><a href="https://vitorangn.github.io/">Portfólio</a></span>
+  </div>
+</nav>
+<header>
+  <div class="wrap">
+    <span class="eyebrow">Projeto autoral · Go · Sistemas distribuídos</span>
+    <h1>Faturamento em Microsserviços</h1>
+    <p class="lead">Dois serviços em Go que se comunicam por HTTP para emitir notas fiscais e dar baixa no estoque, com foco no que costuma quebrar em sistemas distribuídos: cliques simultâneos, repetição de requisições e serviço fora do ar.</p>
+    <div class="btns">
+      <a class="btn primary" href="api/">Documentação da API</a>
+      <a class="btn" href="https://youtu.be/vij8uouVOGg">Vídeo de demonstração</a>
+      <a class="btn" href="https://github.com/VitorAngN/invoice-microservices-go">Código no GitHub</a>
+    </div>
+  </div>
+</header>
+
+<section class="alt">
+  <div class="wrap">
+    <h2>Em números</h2>
+    <div class="stats">
+      <div class="stat"><b>2</b><span>microsserviços em Go</span></div>
+      <div class="stat"><b>20</b><span>verificações ponta a ponta com PostgreSQL real</span></div>
+      <div class="stat"><b>25</b><span>baixas simultâneas testadas sem saldo negativo</span></div>
+      <div class="stat"><b>1</b><span>única baixa de estoque, mesmo com 6 cliques ao mesmo tempo</span></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Destaques de engenharia</h2>
+    <div class="grid">
+      <div class="card"><h3>Impressão à prova de clique duplo</h3><p>Um UPDATE condicional troca a nota de <code>Aberta</code> para <code>Processando</code>: só uma requisição vence, as outras recebem 409 e o estoque é debitado uma única vez.</p></div>
+      <div class="card"><h3>Baixa atômica</h3><p>Todos os itens da nota são debitados numa transação com <code>WHERE balance &gt;= q</code>. Se um item não tem saldo, nenhum é debitado, e o saldo nunca fica negativo.</p></div>
+      <div class="card"><h3>Idempotência</h3><p>Cada baixa leva <code>Idempotency-Key: invoice-&lt;id&gt;</code>, gravada na mesma transação. Se a resposta se perder e o faturamento repetir, o estoque não debita de novo.</p></div>
+      <div class="card"><h3>Resiliência</h3><p>Cliente HTTP com timeout e backoff exponencial que só repete falhas de rede e 5xx. Com o estoque fora do ar, a API responde 503 e a nota volta para Aberta.</p></div>
+      <div class="card"><h3>Testes de verdade</h3><p>Testes de unidade e concorrência com <code>go test -race</code>, e um teste ponta a ponta que sobe os dois serviços com PostgreSQL no GitHub Actions a cada push.</p></div>
+      <div class="card"><h3>Entrega</h3><p>Binários estáticos em imagens distroless sem root, Docker Compose subindo banco e serviços, encerramento gracioso e <code>/health</code> em cada serviço.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="alt">
+  <div class="wrap">
+    <h2>Stack</h2>
+    <div class="tags"><span class="tag">Go</span><span class="tag">Gin</span><span class="tag">GORM</span><span class="tag">PostgreSQL</span><span class="tag">SQLite (testes)</span><span class="tag">Angular</span><span class="tag">RxJS</span><span class="tag">Docker Compose</span><span class="tag">GitHub Actions</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Rodando localmente</h2>
+<pre>git clone https://github.com/VitorAngN/invoice-microservices-go.git
+cd invoice-microservices-go
+docker compose up -d --build        # PostgreSQL + estoque (8081) + faturamento (8082)
+bash scripts/smoke-test.sh          # 20 verificações ponta a ponta</pre>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    João Vitor Angelim Nogueira · Engenharia de Computação (UTFPR) ·
+    <a href="https://github.com/VitorAngN">GitHub</a> ·
+    <a href="https://www.linkedin.com/in/vitorangn/">LinkedIn</a> ·
+    <a href="https://vitorangn.github.io/">Portfólio</a>
+  </div>
+</footer>
+</body>
+</html>

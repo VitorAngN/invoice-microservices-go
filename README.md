@@ -8,6 +8,11 @@
   <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker" />
 </p>
 
+<p align="center">
+  <a href="https://vitorangn.github.io/invoice-microservices-go/"><b>Página do projeto</b></a> ·
+  <a href="https://vitorangn.github.io/invoice-microservices-go/api/"><b>Documentação da API</b></a>
+</p>
+
 Sistema de faturamento e controle de estoque desenvolvido com microsserviços em Go, PostgreSQL e frontend em Angular.
 
 O projeto simula um fluxo de emissão de nota/faturamento integrado ao controle de estoque, com foco em comunicação HTTP entre serviços, persistência relacional, tratamento de falhas, transações ACID, rollback, retry automático, fallback HTTP 503 e atualização atômica de estoque para reduzir inconsistências em operações concorrentes.

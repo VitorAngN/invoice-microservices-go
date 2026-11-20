@@ -1,0 +1,231 @@
+openapi: 3.1.0
+info:
+  title: Faturamento em Microsserviços — API
+  version: 2.0.0
+  description: |
+    Dois microsserviços em Go que conversam por HTTP:
+
+    - **Estoque** (porta 8081): cadastro de produtos e baixa de saldo.
+    - **Faturamento** (porta 8082): notas fiscais; ao imprimir, chama o estoque.
+
+    A baixa de estoque é atômica (todos os itens ou nenhum), não deixa o saldo negativo
+    sob concorrência e é idempotente pelo header `Idempotency-Key`. O faturamento repete
+    falhas de rede e 5xx com backoff exponencial e responde `503` quando o estoque está fora do ar.
+servers:
+  - url: http://localhost:8081
+    description: Serviço de Estoque
+  - url: http://localhost:8082
+    description: Serviço de Faturamento
+security: []
+tags:
+  - name: Estoque
+    description: Produtos e saldos (serviço na porta 8081)
+  - name: Faturamento
+    description: Notas fiscais e impressão (serviço na porta 8082)
+  - name: Health
+    description: Disponibilidade dos serviços
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Verifica se o serviço está no ar (existe nos dois serviços)
+      responses:
+        '200':
+          description: Serviço no ar
+          content:
+            application/json:
+              schema: { type: object, properties: { status: { type: string, example: ok } } }
+
+  /api/products:
+    servers: [{ url: http://localhost:8081, description: Serviço de Estoque }]
+    get:
+      tags: [Estoque]
+      summary: Lista os produtos
+      responses:
+        '200':
+          description: Produtos ordenados por ID
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Produto' } }
+        '500': { $ref: '#/components/responses/Erro' }
+    post:
+      tags: [Estoque]
+      summary: Cadastra um produto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NovoProduto' }
+      responses:
+        '201':
+          description: Produto criado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Produto' }
+        '400': { $ref: '#/components/responses/Erro' }
+        '409': { $ref: '#/components/responses/Erro' }
+
+  /api/products/decrement:
+    servers: [{ url: http://localhost:8081, description: Serviço de Estoque }]
+    post:
+      tags: [Estoque]
+      summary: Dá baixa no estoque (usado pelo faturamento)
+      description: |
+        Todos os itens são debitados numa única transação com
+        `UPDATE ... SET balance = balance - q WHERE balance >= q`: se um item não tiver saldo,
+        nenhum é debitado. Repetir a mesma `Idempotency-Key` responde `200` sem debitar de novo.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Identifica a operação (o faturamento envia `invoice-<id>`)
+          schema: { type: string, example: invoice-42 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Baixa' }
+      responses:
+        '200':
+          description: Estoque atualizado (ou operação já processada antes)
+          content:
+            application/json:
+              schema: { type: object, properties: { message: { type: string } } }
+        '400': { $ref: '#/components/responses/Erro' }
+        '404': { $ref: '#/components/responses/Erro' }
+        '409': { $ref: '#/components/responses/Erro' }
+
+  /api/products/ai/generate:
+    servers: [{ url: http://localhost:8081, description: Serviço de Estoque }]
+    post:
+      tags: [Estoque]
+      summary: Sugere uma descrição de produto (simulação de IA)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [product_name]
+              properties: { product_name: { type: string, example: Parafuso sextavado } }
+      responses:
+        '200':
+          description: Descrição sugerida
+          content:
+            application/json:
+              schema: { type: object, properties: { description: { type: string } } }
+        '400': { $ref: '#/components/responses/Erro' }
+
+  /api/invoices:
+    servers: [{ url: http://localhost:8082, description: Serviço de Faturamento }]
+    get:
+      tags: [Faturamento]
+      summary: Lista as notas (mais novas primeiro)
+      responses:
+        '200':
+          description: Notas com os itens
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Nota' } }
+        '500': { $ref: '#/components/responses/Erro' }
+    post:
+      tags: [Faturamento]
+      summary: Abre uma nota com numeração sequencial
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Baixa' }
+      responses:
+        '201':
+          description: Nota criada com status Aberta
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Nota' }
+        '400': { $ref: '#/components/responses/Erro' }
+
+  /api/invoices/{id}/print:
+    servers: [{ url: http://localhost:8082, description: Serviço de Faturamento }]
+    post:
+      tags: [Faturamento]
+      summary: Imprime a nota (baixa o estoque e fecha a nota)
+      description: |
+        Troca o status `Aberta → Processando` com um UPDATE condicional (só um clique vence),
+        chama o estoque com `Idempotency-Key: invoice-<id>` e fecha a nota. Se o estoque falhar,
+        a nota volta para `Aberta`. O header `X-Simulate-Failure: true` demonstra o fluxo de falha.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+        - { name: X-Simulate-Failure, in: header, required: false, schema: { type: string, enum: ['true'] } }
+      responses:
+        '200':
+          description: Nota impressa e fechada
+          content:
+            application/json:
+              schema: { type: object, properties: { message: { type: string } } }
+        '400': { $ref: '#/components/responses/Erro' }
+        '404': { $ref: '#/components/responses/Erro' }
+        '409':
+          description: A nota não está Aberta, ou falta saldo no estoque
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Erro' }
+        '422': { $ref: '#/components/responses/Erro' }
+        '503':
+          description: Estoque indisponível após as tentativas (a nota volta para Aberta)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Erro' }
+
+components:
+  responses:
+    Erro:
+      description: Erro com mensagem
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Erro' }
+  schemas:
+    Erro:
+      type: object
+      properties: { error: { type: string } }
+    NovoProduto:
+      type: object
+      required: [code, description]
+      properties:
+        code: { type: string, maxLength: 50, example: P-001 }
+        description: { type: string, maxLength: 255, example: Parafuso sextavado }
+        balance: { type: integer, minimum: 0, example: 10 }
+    Produto:
+      allOf:
+        - $ref: '#/components/schemas/NovoProduto'
+        - type: object
+          properties:
+            id: { type: integer }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    Item:
+      type: object
+      required: [product_code, quantity]
+      properties:
+        product_code: { type: string, example: P-001 }
+        quantity: { type: integer, minimum: 1, example: 3 }
+    Baixa:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, minItems: 1, items: { $ref: '#/components/schemas/Item' } }
+    Nota:
+      type: object
+      properties:
+        id: { type: integer }
+        number: { type: integer, example: 1 }
+        status: { type: string, enum: [Aberta, Processando, Fechada] }
+        items:
+          type: array
+          items:
+            allOf:
+              - $ref: '#/components/schemas/Item'
+              - type: object
+                properties: { id: { type: integer } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
